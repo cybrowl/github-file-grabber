@@ -6,7 +6,10 @@ document.getElementById("grabFiles").addEventListener("click", () => {
     const tab = tabs[0];
 
     // Use the imported function here
-    const fileLinks = await getFileLinksRecursively(tab.url);
+    const urlParts = tab.url.split("/");
+    const user = urlParts[3];
+    const repo = urlParts[4];
+    const fileLinks = await getFileLinksFromGitHubAPI(user, repo);
 
     console.log("fileLinks: ", fileLinks);
 
@@ -18,60 +21,21 @@ document.getElementById("grabFiles").addEventListener("click", () => {
   });
 });
 
-async function getFileLinksRecursively(url) {
-  if (url.startsWith("https://github.com/")) {
-    console.log("working on: ", url);
+async function getFileLinksFromGitHubAPI(user, repoName) {
+  const apiEndpoint = `https://api.github.com/repos/${user}/${repoName}/git/trees/master?recursive=1`;
+  const response = await fetch(apiEndpoint);
+  const data = await response.json();
 
-    const response = await fetch(url).catch((error) => {
-      console.error("Error fetching data:", error);
-    });
+  console.log("data: ", data);
 
-    const text = await response.text().catch((error) => {
-      console.error("Error getting text:", error);
-    });
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(text, "text/html");
-
-    const fileLinks = [];
-    const dirLinks = []; // Declare dirLinks here
-    const repoItems = doc.querySelectorAll(
-      ".js-navigation-container .js-navigation-open"
+  const fileLinks = data.tree
+    .filter((node) => node.type === "blob")
+    .map((node) =>
+      node.url
+        .replace("https://api.github.com/repos", "https://github.com")
+        .replace("git/blobs", `blob/master/${node.path}`)
+        .replace(/\/[a-f0-9]+$/, "")
     );
 
-    console.log("repoItems:", repoItems);
-
-    for (const item of repoItems) {
-      const linkElement = item.querySelector(".js-navigation-open");
-      const fileType = item.querySelector(".js-navigation-item .octicon-file")
-        ? null
-        : "Directory";
-      if (linkElement && fileType === "Directory") {
-        const link = linkElement.href;
-        dirLinks.push(link);
-      }
-    }
-
-    for (const item of repoItems) {
-      const linkElement = item.querySelector(".js-navigation-open");
-      const fileType = item.querySelector(".js-navigation-item .octicon-file")
-        ? null
-        : "Directory";
-      if (linkElement && fileType === "Directory") {
-        const link = linkElement.href;
-        dirLinks.push(link);
-      }
-    }
-
-    for (const dirLink of dirLinks) {
-      if (!dirLink.startsWith("https://github.com/")) continue;
-      const subdirFileLinks = await getFileLinksRecursively(dirLink);
-      fileLinks.push(...subdirFileLinks);
-    }
-
-    return fileLinks;
-  } else {
-    console.error("Invalid URL provided:", url);
-    return [];
-  }
+  return fileLinks;
 }
